@@ -17,8 +17,13 @@ final class AgentMonitor {
     }
     var activeSessions: [AgentSession] { visibleSessions.filter { $0.phase.isActive } }
     var activeCount: Int { activeSessions.count }
-    var needsAttention: Bool { sessions.contains { $0.phase == .waiting } }
+    var needsAttention: Bool { sessions.contains { $0.phase == .waiting } || !prompts.isEmpty }
     var hooksSeen = false
+    /// Tool calls waiting for approval in the island, oldest first.
+    var prompts: [PermissionPrompt] = []
+
+    /// Answers a held PermissionRequest hook (set by AppEnvironment → HookServer).
+    @ObservationIgnored var onPermissionDecision: ((UUID, PermissionPrompt.Decision) -> Void)?
 
     @ObservationIgnored var onTransition: ((AgentSession, AgentPhase) -> Void)?
     @ObservationIgnored private let queue = DispatchQueue(label: "isle.agents", qos: .utility)
@@ -64,12 +69,65 @@ final class AgentMonitor {
         if new != sessions { sessions = new }
     }
 
+    // MARK: Permission prompts
+
+    /// Tools whose "permission" is really a question for the person; the app has to show those.
+    private static let appOnlyTools: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
+
+    /// A PermissionRequest hook is waiting on `id`. Returns false when Isle shouldn't hold it.
+    func addPrompt(id: UUID, pid: pid_t?, payload: [String: Any]) -> Bool {
+        let tool = payload["tool_name"] as? String ?? "tool"
+        guard AppSettings.shared.agentApprovals, !Self.appOnlyTools.contains(tool), !tool.hasPrefix("mcp__ccd_") else { return false }
+        let prompt = PermissionPrompt(
+            id: id, agentPID: pid, sessionID: payload["session_id"] as? String,
+            cwd: payload["cwd"] as? String ?? "", tool: tool,
+            summary: PermissionPrompt.summarize(tool: tool, input: payload["tool_input"] as? [String: Any] ?? [:]),
+            created: Date())
+        prompts.append(prompt)
+        ingestHook(source: "claude", pid: pid, payload: payload)
+        return true
+    }
+
+    func respond(_ p: PermissionPrompt, _ decision: PermissionPrompt.Decision) {
+        guard prompts.contains(where: { $0.id == p.id }) else { return }
+        prompts.removeAll { $0.id == p.id }
+        onPermissionDecision?(p.id, decision)
+        var payload: [String: Any] = ["cwd": p.cwd, "tool_name": p.tool]
+        if let sid = p.sessionID { payload["session_id"] = sid }
+        switch decision {
+        case .allow: payload["hook_event_name"] = "PreToolUse"
+        case .deny: payload["hook_event_name"] = "PostToolUse"
+        case .deferToApp: return
+        }
+        ingestHook(source: "claude", pid: p.agentPID, payload: payload)
+    }
+
+    /// The hook went away on its own (answered elsewhere, interrupted, or timed out).
+    func dropPrompt(id: UUID) {
+        prompts.removeAll { $0.id == id }
+    }
+
+    func prompts(for s: AgentSession) -> [PermissionPrompt] {
+        prompts.filter { p in
+            if let sid = p.sessionID, let mine = s.sessionID { return sid == mine }
+            return !p.cwd.isEmpty && p.cwd == s.cwd
+        }
+    }
+
     // MARK: Actions
 
     func focus(_ s: AgentSession) {
-        if let pid = s.hostPID, let app = NSRunningApplication(processIdentifier: pid) {
-            app.activate()
+        // Anything held in the island would keep the app's own prompt from showing.
+        for p in prompts(for: s) { respond(p, .deferToApp) }
+
+        let host = s.hostPID.flatMap { NSRunningApplication(processIdentifier: $0) }
+        let hostIsClaudeApp = host?.bundleIdentifier == ClaudeDesktop.bundleID
+        if s.kind == .claude, host == nil || hostIsClaudeApp,
+           let sid = s.sessionID, let url = ClaudeDesktop.chatURL(forCLISession: sid) {
+            NSWorkspace.shared.open(url)
+            return
         }
+        host?.activate()
     }
 
     func openInEditor(_ s: AgentSession) {
@@ -136,6 +194,8 @@ final class AgentScanner {
         var interrupted: Bool
         var pendingRequest: Bool
         var title: String?
+        /// The turn ended by asking the person something (a next-step question or a closing "?").
+        var question: String?
     }
 
     private var classified: [pid_t: Classified] = [:]
@@ -308,6 +368,7 @@ final class AgentScanner {
 
             var tailDate = Date.distantPast
             var title: String?
+            var asking = false
             let hook = kind == .claude ? (hookByPID[pid] ?? hookByCwd[t.cwd]) : nil
             if kind == .claude, assigned[pid] == nil, hook == nil {
                 // A working Claude session always writes its transcript. No transcript of its
@@ -323,11 +384,13 @@ final class AgentScanner {
                 title = tail.title
                 let sub = subActivity(for: url)
                 (phase, detail, message) = interpret(tail, recentCPU: recentCPU, subagentActive: sub.map { now.timeIntervalSince($0) < 8 } ?? false, now: now)
+                asking = phase == .waiting && tail.question != nil
                 if phase == .done, t.phase == .done { /* keep phaseSince */ }
                 source = "transcript"
             }
 
-            if let h = hook, h.date >= tailDate.addingTimeInterval(-1.5) {
+            // The turn ended on a question: Stop/idle hooks mean "your turn", not "finished".
+            if let h = hook, h.date >= tailDate.addingTimeInterval(-1.5), !(asking && (h.phase == .done || h.phase == .idle)) {
                 phase = h.phase
                 detail = h.detail
                 if let m = h.message { message = m }
@@ -362,7 +425,8 @@ final class AgentScanner {
                 lastMessage: phase == .done ? message : nil,
                 isBackground: background,
                 source: source,
-                title: title
+                title: title,
+                sessionID: (assigned[pid] ?? hookTranscript[pid])?.deletingPathExtension().lastPathComponent
             ))
         }
 
@@ -423,6 +487,9 @@ final class AgentScanner {
             } else {
                 state = HookState(phase: .waiting, detail: msg, date: now)
             }
+        case "PermissionRequest":
+            let tool = payload["tool_name"] as? String ?? "tool"
+            state = HookState(phase: .waiting, detail: "Wants to use \(Self.toolShort(tool))", date: now)
         case "Stop":
             state = HookState(phase: .done, detail: "Finished", date: now)
         case "SessionStart":
@@ -649,7 +716,8 @@ final class AgentScanner {
             title = t
             break
         }
-        for line in lines.reversed() {
+        for idx in lines.indices.reversed() {
+            let line = lines[idx]
             // Cheap prefilter before JSON-parsing (lines can be hundreds of KB).
             // The top-level "type" key sits near the start for user lines and near the
             // end (after the message body) for assistant lines, so look at both ends.
@@ -680,11 +748,55 @@ final class AgentScanner {
                 if type == "assistant", let last = arr.last, last["type"] as? String == "text" { tool = nil }
             }
             if type == "user", let t = text, t.contains("[Request interrupted") { interrupted = true }
+            var question: String?
+            if type == "assistant", tool == nil {
+                question = Self.turnQuestion(before: lines[..<idx]) ?? text.flatMap(Self.closingQuestion)
+            }
             return TranscriptTail(mtime: mtime, lastType: type, toolName: tool,
                                   text: text.map(Self.snippet), stopReason: msg["stop_reason"] as? String,
-                                  interrupted: interrupted, pendingRequest: pending, title: title)
+                                  interrupted: interrupted, pendingRequest: pending, title: title,
+                                  question: question.map(Self.snippet))
         }
         return nil
+    }
+
+    /// The question a finished turn left open: a next-step box with an `ask` (Claude desktop's
+    /// wrap_up), searched back to the prompt that started the turn.
+    private static func turnQuestion(before lines: ArraySlice<Data.SubSequence>) -> String? {
+        var scanned = 0
+        for line in lines.reversed() {
+            scanned += 1
+            if scanned > 80 { break }
+            let head = String(decoding: line.prefix(700), as: UTF8.self)
+            if line.count >= 4096 {
+                // Huge lines are tool results or pasted prompts; only a prompt matters here.
+                let ends = head + String(decoding: line.suffix(800), as: UTF8.self)
+                guard ends.contains("\"type\":\"user\""), !head.contains("tool_result") else { continue }
+            }
+            guard let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  let type = obj["type"] as? String, type == "user" || type == "assistant",
+                  obj["isSidechain"] as? Bool != true else { continue }
+            let content = (obj["message"] as? [String: Any])?["content"]
+            if type == "user" {
+                if content is String { return nil }
+                let items = content as? [[String: Any]] ?? []
+                if items.contains(where: { $0["type"] as? String != "tool_result" }) { return nil }
+                continue
+            }
+            for item in content as? [[String: Any]] ?? [] where item["type"] as? String == "tool_use" {
+                guard let name = item["name"] as? String, name.hasSuffix("__wrap_up") else { continue }
+                let input = item["input"] as? [String: Any] ?? [:]
+                if let ask = input["ask"] as? String, !ask.trimmingCharacters(in: .whitespaces).isEmpty { return ask }
+            }
+        }
+        return nil
+    }
+
+    /// A closing line that ends in "?" ("Want me to push it?").
+    private static func closingQuestion(_ text: String) -> String? {
+        let last = text.split(whereSeparator: \.isNewline).last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        let plain = last.trimmingCharacters(in: CharacterSet(charactersIn: "*_`> "))
+        return plain.hasSuffix("?") ? plain : nil
     }
 
     private func interpret(_ t: TranscriptTail, recentCPU: Bool, subagentActive: Bool, now: Date) -> (AgentPhase, String, String?) {
@@ -705,6 +817,7 @@ final class AgentScanner {
                 return (.idle, "Ready", nil)
             }
             if t.stopReason == nil && age < 4 { return (.working, "Writing…", nil) }
+            if let q = t.question { return age < 4 * 3600 ? (.waiting, q, nil) : (.idle, "Ready", nil) }
             return age < 120 ? (.done, "Finished", t.text) : (.idle, "Ready", nil)
         default:
             return (.idle, "Ready", nil)

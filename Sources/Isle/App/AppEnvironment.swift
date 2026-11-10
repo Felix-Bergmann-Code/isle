@@ -58,18 +58,41 @@ final class AppEnvironment {
         hooks.onEvent = { [weak self] source, pid, payload in
             self?.agents.ingestHook(source: source, pid: pid, payload: payload)
         }
+        hooks.onPermission = { [weak self] id, pid, payload in
+            guard let self else { return false }
+            guard self.agents.addPrompt(id: id, pid: pid, payload: payload) else { return false }
+            self.announcePrompt(id)
+            return true
+        }
+        hooks.onPermissionGone = { [weak self] id in self?.agents.dropPrompt(id: id) }
+        agents.onPermissionDecision = { [weak self] id, decision in self?.hooks.decide(id, decision) }
         hooks.start()
+        // Hooks installed by an older Isle lack the approval hook: add it (a backup is kept).
+        if ClaudeHookInstaller.needsUpgrade { try? ClaudeHookInstaller.install() }
 
         meetingTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in self?.checkMeetings() }
     }
 
     // MARK: Agents
 
+    /// A tool call is waiting for approval: show it right away, longer than other banners.
+    private func announcePrompt(_ id: UUID) {
+        guard let p = agents.prompts.first(where: { $0.id == id }) else { return }
+        if settings.agentSound { NSSound(named: "Submarine")?.play() }
+        guard settings.agentBanners, !vm.isOpen else { return }
+        let project = p.cwd.isEmpty ? "Claude Code" : (p.cwd as NSString).lastPathComponent
+        let what = p.summary.isEmpty ? p.toolLabel : "\(p.toolLabel): \(p.summary)"
+        vm.flash(.agent(AgentBanner(kind: .claude, phase: .waiting, title: "\(project) wants approval",
+                                    subtitle: "\(what) · hover to answer")), duration: 12)
+    }
+
     private func announce(_ s: AgentSession, phase: AgentPhase) {
         guard settings.agentBanners, !vm.isOpen, !s.isBackground || settings.showBackgroundAgents else { return }
         let banner: AgentBanner
         switch phase {
         case .waiting:
+            // Approval requests get their own banner (announcePrompt).
+            guard agents.prompts(for: s).isEmpty else { return }
             banner = AgentBanner(kind: s.kind, phase: .waiting, title: "\(s.project) needs you", subtitle: s.detail)
         case .done:
             banner = AgentBanner(kind: s.kind, phase: .done, title: "\(s.project) is done",

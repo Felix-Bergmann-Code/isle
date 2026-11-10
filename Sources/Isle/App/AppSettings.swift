@@ -32,6 +32,7 @@ final class AppSettings {
     var showAgentActivity: Bool { didSet { d.set(showAgentActivity, forKey: "showAgentActivity") } }
     var agentBanners: Bool { didSet { d.set(agentBanners, forKey: "agentBanners") } }
     var agentSound: Bool { didSet { d.set(agentSound, forKey: "agentSound") } }
+    var agentApprovals: Bool { didSet { d.set(agentApprovals, forKey: "agentApprovals") } }
     var showBackgroundAgents: Bool { didSet { d.set(showBackgroundAgents, forKey: "showBackgroundAgents") } }
     var showBatteryActivity: Bool { didSet { d.set(showBatteryActivity, forKey: "showBatteryActivity") } }
     var showBluetoothActivity: Bool { didSet { d.set(showBluetoothActivity, forKey: "showBluetoothActivity"); onBluetoothChange?() } }
@@ -51,6 +52,7 @@ final class AppSettings {
             "showAgentActivity": true,
             "agentBanners": true,
             "agentSound": false,
+            "agentApprovals": true,
             "showBackgroundAgents": false,
             "showBatteryActivity": true,
             "showBluetoothActivity": true,
@@ -67,6 +69,7 @@ final class AppSettings {
         showAgentActivity = d.bool(forKey: "showAgentActivity")
         agentBanners = d.bool(forKey: "agentBanners")
         agentSound = d.bool(forKey: "agentSound")
+        agentApprovals = d.bool(forKey: "agentApprovals")
         showBackgroundAgents = d.bool(forKey: "showBackgroundAgents")
         showBatteryActivity = d.bool(forKey: "showBatteryActivity")
         showBluetoothActivity = d.bool(forKey: "showBluetoothActivity")

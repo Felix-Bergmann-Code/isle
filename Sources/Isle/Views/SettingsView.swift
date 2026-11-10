@@ -107,6 +107,8 @@ private struct AgentSettings: View {
             Section("Agents") {
                 Toggle("Banner when an agent finishes or needs you", isOn: $settings.agentBanners)
                 Toggle("Play a sound with banners", isOn: $settings.agentSound)
+                Toggle("Approve Claude Code tool calls from the island", isOn: $settings.agentApprovals)
+                    .help("Requests wait up to \(Int(HookServer.permissionHold / 60)) minutes in the island, then go back to Claude Code's own prompt.")
                 Toggle("Show background agents (e.g. Codex in VS Code) when idle", isOn: $settings.showBackgroundAgents)
                 Toggle("Show local dev servers in the Agents tab", isOn: $settings.showDevServers)
                 LabeledContent("Detected right now", value: "\(env.agents.visibleSessions.count)")
@@ -123,7 +125,7 @@ private struct AgentSettings: View {
                         Button("Install") { run { try ClaudeHookInstaller.install() } }.buttonStyle(.borderedProminent)
                     }
                 }
-                Text("Without hooks Isle infers status from transcripts and CPU activity. Hooks make \"needs permission\" and \"finished\" instant and exact. Install adds a quiet `curl` to localhost:\(String(HookServer.defaultPort)) for each hook event in ~/.claude/settings.json (a backup is saved next to it). Restart running Claude sessions to pick it up.")
+                Text("Without hooks Isle infers status from transcripts and CPU activity. Hooks make \"needs permission\" and \"finished\" instant and exact, and let you allow or deny tool calls from the island. Install adds a quiet `curl` to localhost:\(String(HookServer.defaultPort)) for each hook event in ~/.claude/settings.json (a backup is saved next to it). Restart running Claude sessions to pick it up.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let error { Text(error).font(.caption).foregroundStyle(.red) }
                 Button("Send a test banner") {

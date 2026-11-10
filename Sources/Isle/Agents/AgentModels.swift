@@ -93,4 +93,41 @@ struct AgentSession: Identifiable, Equatable {
     var source: String // "hooks", "transcript", "cpu"
     /// Session title (Claude Code names sessions), disambiguates sessions in one folder.
     var title: String?
+    /// Claude Code session id (the transcript's file name), used to deep-link into the chat.
+    var sessionID: String? = nil
+}
+
+/// A tool call waiting for approval, held open by Isle's PermissionRequest hook.
+struct PermissionPrompt: Identifiable, Equatable {
+    let id: UUID
+    let agentPID: pid_t?
+    let sessionID: String?
+    let cwd: String
+    let tool: String
+    /// What the tool is about to do, e.g. the shell command or the file it edits.
+    let summary: String
+    let created: Date
+
+    var toolLabel: String { AgentScanner.toolShort(tool) }
+
+    /// `deferToApp` hands the decision back to Claude Code's own prompt.
+    enum Decision { case allow, deny, deferToApp }
+
+    static func summarize(tool: String, input: [String: Any]) -> String {
+        func str(_ k: String) -> String? { (input[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        let raw: String
+        switch tool {
+        case "Bash", "PowerShell": raw = str("command") ?? ""
+        case "Edit", "MultiEdit", "Write", "Read", "NotebookEdit":
+            raw = (str("file_path") ?? str("notebook_path")).map { ($0 as NSString).lastPathComponent } ?? ""
+        case "WebFetch": raw = str("url") ?? ""
+        case "WebSearch": raw = str("query") ?? ""
+        default:
+            raw = ["command", "url", "path", "file_path", "query", "description", "prompt"]
+                .lazy.compactMap(str).first ?? ""
+        }
+        let collapsed = raw.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        return collapsed.count > 220 ? String(collapsed.prefix(220)) + "…" : collapsed
+    }
 }
