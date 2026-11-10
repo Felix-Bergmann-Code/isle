@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Control Isle from the shell:  isle open | isle open:agents | isle toggle | isle close
+osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('io.github.felix-bergmann-code.isle.command', '${1:-toggle}', \$(), true)" >/dev/null

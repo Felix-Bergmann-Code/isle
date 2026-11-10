@@ -1,0 +1,96 @@
+import SwiftUI
+
+enum AgentKind: String, CaseIterable, Codable {
+    case claude, codex, cursor, gemini, aider, opencode, copilot, amp, goose, custom
+
+    var name: String {
+        switch self {
+        case .claude: return "Claude Code"
+        case .codex: return "Codex"
+        case .cursor: return "Cursor Agent"
+        case .gemini: return "Gemini CLI"
+        case .aider: return "Aider"
+        case .opencode: return "opencode"
+        case .copilot: return "Copilot CLI"
+        case .amp: return "Amp"
+        case .goose: return "Goose"
+        case .custom: return "Agent"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .claude: return Color(red: 0.90, green: 0.52, blue: 0.38)
+        case .codex: return Color(red: 0.38, green: 0.82, blue: 0.72)
+        case .cursor: return Color(red: 0.62, green: 0.66, blue: 0.98)
+        case .gemini: return Color(red: 0.40, green: 0.60, blue: 1.00)
+        case .aider: return Color(red: 0.45, green: 0.84, blue: 0.42)
+        case .opencode: return Color(red: 0.98, green: 0.80, blue: 0.32)
+        case .copilot: return Color(red: 0.74, green: 0.52, blue: 0.98)
+        case .amp: return Color(red: 0.98, green: 0.45, blue: 0.62)
+        case .goose: return Color(red: 0.70, green: 0.76, blue: 0.84)
+        case .custom: return Color(red: 0.85, green: 0.85, blue: 0.85)
+        }
+    }
+
+    /// Little accessory each creature wears on its head.
+    var accessory: String {
+        switch self {
+        case .claude: return "sparkle"
+        case .codex: return "hexagon.fill"
+        case .cursor: return "triangle.fill"
+        case .gemini: return "star.fill"
+        case .aider: return "leaf.fill"
+        case .opencode: return "circle.fill"
+        case .copilot: return "airplane"
+        case .amp: return "bolt.fill"
+        case .goose: return "feather"
+        case .custom: return "circle.fill"
+        }
+    }
+}
+
+enum AgentPhase: String, Equatable {
+    case working, waiting, done, idle
+
+    var label: String {
+        switch self {
+        case .working: return "Working"
+        case .waiting: return "Needs you"
+        case .done: return "Done"
+        case .idle: return "Idle"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .working: return Color(red: 0.45, green: 0.78, blue: 1.0)
+        case .waiting: return Color(red: 1.0, green: 0.65, blue: 0.25)
+        case .done: return Color(red: 0.40, green: 0.85, blue: 0.50)
+        case .idle: return Color.white.opacity(0.4)
+        }
+    }
+
+    var isActive: Bool { self == .working || self == .waiting }
+}
+
+struct AgentSession: Identifiable, Equatable {
+    let id: String
+    let pid: pid_t
+    let kind: AgentKind
+    var cwd: String
+    var project: String
+    var branch: String?
+    var hostName: String?
+    var hostPID: pid_t?
+    var startedAt: Date
+    var phase: AgentPhase
+    var phaseSince: Date
+    var detail: String
+    /// Last thing the agent said (for "done" banners).
+    var lastMessage: String?
+    var isBackground: Bool
+    var source: String // "hooks", "transcript", "cpu"
+    /// Session title (Claude Code names sessions), disambiguates sessions in one folder.
+    var title: String?
+}

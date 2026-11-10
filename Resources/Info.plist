@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>Isle</string>
+    <key>CFBundleDisplayName</key><string>Isle</string>
+    <key>CFBundleIdentifier</key><string>io.github.felix-bergmann-code.isle</string>
+    <key>CFBundleExecutable</key><string>Isle</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key><string>15.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppleEventsUsageDescription</key><string>Isle shows what's playing in Spotify and Music and lets you control playback from the notch.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>Isle shows your upcoming meetings in the notch.</string>
+    <key>NSCalendarsUsageDescription</key><string>Isle shows your upcoming meetings in the notch.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>Isle shows a live activity when your AirPods or other Bluetooth devices connect.</string>
+</dict>
+</plist>

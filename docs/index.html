@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Isle — a Dynamic Island for your Mac</title>
+<meta name="description" content="Isle is a free, open-source Dynamic Island for the Mac notch: now playing, meetings, AirPods, a file shelf and a live view of your AI coding agents.">
+<meta property="og:title" content="Isle — a Dynamic Island for your Mac">
+<meta property="og:description" content="Free and open source. Now playing, meetings, file shelf and live AI agent status, right in the notch.">
+<meta name="theme-color" content="#0b0b0f">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='6' y='22' width='52' height='20' rx='10' fill='black'/><circle cx='48' cy='32' r='4' fill='%2334d399'/></svg>">
+<style>
+  :root {
+    --bg: #0b0b0f; --fg: #f4f4f6; --muted: #9a9aa6; --card: #15151b; --line: #26262f;
+    --accent: #34d399; --accent2: #a78bfa; --warn: #fbbf24;
+    --radius: 18px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f6f8; --fg: #111116; --muted: #5d5d6b; --card: #ffffff; --line: #e3e3ea; }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; }
+  nav .brand { font-weight: 700; letter-spacing: -.01em; display: flex; gap: 10px; align-items: center; text-decoration: none; }
+  nav .brand i { width: 26px; height: 11px; background: var(--fg); border-radius: 6px; display: inline-block; }
+  nav .links { display: flex; gap: 20px; font-size: 15px; }
+  nav .links a { text-decoration: none; color: var(--muted); }
+  nav .links a:hover { color: var(--fg); }
+
+  header.hero { text-align: center; padding: 48px 0 24px; }
+  h1 { font-size: clamp(40px, 7vw, 76px); line-height: 1.02; letter-spacing: -.035em; margin: 0 0 18px; }
+  h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--muted); max-width: 640px; margin: 0 auto 30px; }
+  .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); }
+  .btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .btn:hover { transform: translateY(-1px); }
+
+  /* --- Notch demo --- */
+  .stage {
+    margin: 48px auto 0; max-width: 820px; aspect-ratio: 16 / 7; min-height: 290px; position: relative; overflow: hidden;
+    border-radius: 22px 22px 0 0; border: 1px solid var(--line); border-bottom: 0;
+    background: radial-gradient(120% 120% at 20% 0%, #3b2a6b 0%, #1a2a4a 45%, #0f1720 100%);
+  }
+  .menubar { height: 28px; background: rgba(0,0,0,.25); backdrop-filter: blur(10px); display: flex; justify-content: space-between; align-items: center; padding: 0 14px; font-size: 12px; color: rgba(255,255,255,.85); }
+  .menubar .l, .menubar .r { display: flex; gap: 14px; }
+  .island {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    background: #000; color: #fff; border-radius: 0 0 16px 16px;
+    width: 190px; height: 32px; overflow: hidden;
+    animation: island 12s cubic-bezier(.5,1.6,.4,1) infinite;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  @keyframes island {
+    0%, 8%   { width: 190px; height: 32px; border-radius: 0 0 14px 14px; }
+    14%, 38% { width: 300px; height: 32px; border-radius: 0 0 14px 14px; }
+    46%, 78% { width: min(560px, 92%); height: 230px; border-radius: 0 0 34px 34px; }
+    86%, 100%{ width: 190px; height: 32px; border-radius: 0 0 14px 14px; }
+  }
+  .compact { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; animation: compact 12s infinite; }
+  @keyframes compact { 0%,10% { opacity: 0; } 15%,38% { opacity: 1; } 42%,100% { opacity: 0; } }
+  .art { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg, #f472b6, #8b5cf6); }
+  .viz { display: flex; gap: 2px; align-items: center; height: 16px; }
+  .viz b { width: 3px; background: var(--accent); border-radius: 2px; animation: bar .9s ease-in-out infinite alternate; }
+  .viz b:nth-child(2) { animation-delay: -.3s } .viz b:nth-child(3) { animation-delay: -.6s } .viz b:nth-child(4) { animation-delay: -.15s }
+  @keyframes bar { from { height: 4px } to { height: 16px } }
+  .open { position: absolute; inset: 0; padding: 40px 22px 18px; text-align: left; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; animation: open 12s infinite; }
+  @keyframes open { 0%,46% { opacity: 0; } 52%,76% { opacity: 1; } 80%,100% { opacity: 0; } }
+  .tabs { position: absolute; top: 10px; left: 22px; display: flex; gap: 6px; font-size: 11px; }
+  .tabs span { padding: 2px 10px; border-radius: 999px; background: #1c1c22; color: #aaa; }
+  .tabs span.on { background: #fff; color: #000; }
+  .player { display: flex; gap: 12px; align-items: center; }
+  .player .art { width: 64px; height: 64px; border-radius: 12px; flex: none; }
+  .player small, .agent small { color: #9a9aa6; display: block; font-size: 11px; line-height: 1.3; }
+  .player strong, .agent strong { font-size: 13px; }
+  .progress { height: 4px; background: #2a2a31; border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 40%; background: #fff; border-radius: 4px; }
+  .agents { display: grid; gap: 8px; align-content: start; }
+  .agent { display: flex; gap: 10px; align-items: center; background: #121217; border-radius: 12px; padding: 8px 10px; }
+  .dot { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #000; }
+  .dot.work { background: var(--accent); animation: bounce .7s ease-in-out infinite alternate; }
+  .dot.wait { background: var(--warn); animation: wiggle .5s ease-in-out infinite alternate; }
+  .dot.done { background: var(--accent2); }
+  @keyframes bounce { from { transform: translateY(1px) } to { transform: translateY(-3px) } }
+  @keyframes wiggle { from { transform: rotate(-10deg) } to { transform: rotate(10deg) } }
+
+  section { padding: 72px 0 0; }
+  h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.025em; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 32px; max-width: 620px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card .ico { font-size: 22px; margin-bottom: 10px; display: block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chips span { border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 14px; color: var(--muted); }
+  pre { background: #0f0f14; color: #e8e8ee; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; overflow-x: auto; font: 14px/1.6 ui-monospace, "SF Mono", Menlo, monospace; margin: 0; }
+  pre .c { color: #7c7c8a; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } .open { grid-template-columns: 1fr; } .agents .agent:nth-child(n+2) { display: none; } }
+  .contrib { margin-top: 72px; text-align: center; background: var(--card); border: 1px solid var(--line); border-radius: 28px; padding: 48px 24px; }
+  footer { color: var(--muted); font-size: 14px; padding: 48px 0; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } .open { opacity: 1; } .island { width: min(560px, 92%); height: 230px; border-radius: 0 0 34px 34px; } .compact { opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><i></i>Isle</a>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/Felix-Bergmann-Code/isle">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <h1>Your notch,<br><span>finally useful.</span></h1>
+    <p class="lede">Isle is a free, open-source Dynamic Island for macOS. It shows music, meetings, AirPods and a file shelf, plus a live view of every AI coding agent you have running.</p>
+    <div class="ctas">
+      <a class="btn primary" href="#install">Get Isle</a>
+      <a class="btn" href="https://github.com/Felix-Bergmann-Code/isle">★ Star on GitHub</a>
+    </div>
+
+    <div class="stage" aria-label="Animated preview of the Isle notch growing from a compact live activity into the open island">
+      <div class="menubar"><div class="l"><b></b><span>Finder</span><span>File</span><span>Edit</span><span>View</span></div><div class="r"><span>⌁</span><span>Wi-Fi</span><span>Tue 10:42</span></div></div>
+      <div class="island">
+        <div class="compact"><span class="art"></span><span class="viz"><b></b><b></b><b></b><b></b></span></div>
+        <div class="open">
+          <div class="tabs"><span class="on">Home</span><span>Agents</span><span>Shelf</span></div>
+          <div>
+            <div class="player"><span class="art"></span><div><strong>Midnight Drive</strong><small>Neon Coast</small><div class="progress"><i></i></div></div></div>
+            <div class="agent" style="margin-top:14px"><span class="dot" style="background:#60a5fa">📅</span><div><strong>Design review</strong><small>in 5 min · Zoom</small></div></div>
+          </div>
+          <div class="agents">
+            <div class="agent"><span class="dot work">✦</span><div><strong>Claude Code · api</strong><small>Editing files · main</small></div></div>
+            <div class="agent"><span class="dot wait">!</span><div><strong>Codex · web</strong><small>Waiting for approval · Bash</small></div></div>
+            <div class="agent"><span class="dot done">✓</span><div><strong>Gemini CLI · docs</strong><small>Done</small></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <h2>Everything at a glance</h2>
+    <p class="sub">Hover to open, click to open instantly, swipe with two fingers to switch tabs. Isle blends into the hardware notch, or shows as a pill on displays without one.</p>
+    <div class="grid">
+      <div class="card"><span class="ico">🎵</span><h3>Now Playing</h3><p>Album art, a live visualizer and controls for Spotify and Apple Music. Push-based, so there's no polling.</p></div>
+      <div class="card"><span class="ico">🤖</span><h3>AI agents</h3><p>See which agents are working, waiting for you or done, with project and git branch. Click to jump to the agent.</p></div>
+      <div class="card"><span class="ico">📅</span><h3>Meetings</h3><p>Your next events, and a banner five minutes before a meeting starts.</p></div>
+      <div class="card"><span class="ico">🗂️</span><h3>Shelf</h3><p>Drag files onto the notch to park them, then drag them out wherever you need them.</p></div>
+      <div class="card"><span class="ico">🎧</span><h3>Devices &amp; battery</h3><p>Banners when AirPods connect, when you plug in, and when the battery runs low.</p></div>
+      <div class="card"><span class="ico">🔊</span><h3>HUD</h3><p>Volume and brightness levels right beside the notch. It can optionally replace the system HUD.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Built for people who live in the terminal</h2>
+    <p class="sub">Isle detects coding agents from their process trees, transcripts and optional hooks. It also lists every dev server you started from a project, with open and stop buttons.</p>
+    <div class="chips"><span>Claude Code</span><span>Codex</span><span>Gemini CLI</span><span>Cursor Agent</span><span>Aider</span><span>opencode</span><span>Copilot CLI</span><span>Amp</span><span>Goose</span><span>…anything with curl</span></div>
+    <div style="margin-top:22px">
+<pre><span class="c"># any script can report its own status</span>
+curl -s -X POST localhost:47823/hook/custom \
+  -d '{"id":"deploy","name":"Deploy","phase":"working","detail":"Uploading…"}'</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Light enough to forget about</h2>
+    <p class="sub">The window is never resized, and every animation that stays on screen runs on Core Animation in the render server.</p>
+    <div class="grid">
+      <div class="card"><h3>~0% CPU</h3><p>when closed, even with the visualizer and spinners running.</p></div>
+      <div class="card"><h3>~1% CPU</h3><p>with a live activity showing and agents being scanned.</p></div>
+      <div class="card"><h3>0 dependencies</h3><p>Pure SwiftUI, AppKit and Core Animation. No telemetry, nothing leaves your Mac.</p></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <p class="sub">Build from source in about a minute. Requires macOS 15+ and Xcode 16+.</p>
+<pre>git clone https://github.com/Felix-Bergmann-Code/isle.git
+cd isle
+./scripts/build.sh --install --run</pre>
+  </section>
+
+  <div class="contrib">
+    <h2>Open source, and PRs are welcome</h2>
+    <p class="sub" style="margin:10px auto 26px">Isle is MIT-licensed. Add support for another agent, a new Now Playing source, or a better icon. Small fixes count too.</p>
+    <div class="ctas">
+      <a class="btn primary" href="https://github.com/Felix-Bergmann-Code/isle/blob/main/CONTRIBUTING.md">Contributing guide</a>
+      <a class="btn" href="https://github.com/Felix-Bergmann-Code/isle/issues">Open issues</a>
+    </div>
+  </div>
+
+  <footer>
+    <span>MIT License · Made by <a href="https://github.com/Felix-Bergmann-Code">Felix Bergmann</a> and contributors</span>
+    <span>Also: <a href="https://felix-bergmann-code.github.io/gauge/">Gauge</a>, a tiny menu bar system monitor</span>
+  </footer>
+</div>
+</body>
+</html>
