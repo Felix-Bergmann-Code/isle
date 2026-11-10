@@ -40,7 +40,7 @@ Requires **macOS 15+** and **Xcode 16+** (or a Swift 6 toolchain). The script si
 | State | What you see |
 | --- | --- |
 | **Closed** | Blends into the hardware notch (a pill on displays without one). Grows slightly on hover. |
-| **Live activity** | Album art + visualizer while music plays, and running agents (avatars + spinner + count). When both are active it shows the art and the agents. |
+| **Live activity** | Album art + visualizer while music plays, and running agents (avatars + thinking dots + count). When both are active it shows the art and the agents. |
 | **HUD** | Volume / brightness level beside the notch. |
 | **Banner** | Drops down when an agent finishes or needs you, 5 min before a meeting, and when AirPods or other devices connect. Also shows charging and low battery. |
 | **Open** (hover) | Tabs: **Home** (player + calendar), **Agents**, **Shelf**. |
@@ -95,7 +95,7 @@ scripts/isle demo:agent    # demo:agent | demo:waiting | demo:meeting | demo:air
 ## Performance
 
 - The window is never resized. Only SwiftUI shapes animate, using springs.
-- Animations that stay on screen while closed (visualizer, spinner, avatar motion) are Core Animation layer animations. They run in the render server, so the closed island uses roughly 0% CPU.
+- Animations that stay on screen while closed (visualizer, thinking dots, avatar motion) are Core Animation layer animations. They run in the render server, so the closed island uses roughly 0% CPU.
 - Agent scanning uses one `sysctl` per tick plus cached classification, and tail-parses transcripts only when their mtime changes. Measured at about 1% CPU with a live activity showing.
 - Now Playing uses Spotify's and Music's distributed notifications (push, no polling). The position re-syncs only while the player is visible.
 

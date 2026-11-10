@@ -77,13 +77,13 @@ struct AgentCountBadge: View {
         let tint = attention ? AgentPhase.waiting.color : AgentPhase.working.color
         HStack(spacing: 5) {
             ZStack {
-                Circle().stroke(tint.opacity(0.22), lineWidth: 2)
                 if attention {
+                    Circle().stroke(tint.opacity(0.22), lineWidth: 2)
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.55, weight: .heavy))
                         .foregroundStyle(tint)
                 } else {
-                    LayerSpinner(color: tint)
+                    LayerThinkingDots(color: tint)
                 }
             }
             .frame(width: size, height: size)
