@@ -262,23 +262,7 @@ struct BatteryGlyph: View {
                     .foregroundStyle(.white)
                     .monospacedDigit()
             }
-            // System SF Symbol battery, same as the macOS menu bar.
-            Image(systemName: symbol)
-                .symbolRenderingMode(fill == .white ? .monochrome : .hierarchical)
-                .foregroundStyle(fill)
-                .font(.system(size: 15, weight: .regular))
-                .contentTransition(.symbolEffect(.replace))
-        }
-    }
-
-    private var symbol: String {
-        if charging { return "battery.100percent.bolt" }
-        switch level {
-        case ..<13: return "battery.0percent"
-        case ..<38: return "battery.25percent"
-        case ..<63: return "battery.50percent"
-        case ..<88: return "battery.75percent"
-        default: return "battery.100percent"
+            BatteryShape(level: level, charging: charging, color: fill)
         }
     }
 
@@ -372,5 +356,46 @@ struct BannerView: View {
         case .shelf: return "Drag them out whenever you need them"
         default: return ""
         }
+    }
+}
+
+/// The macOS 27 menu bar battery: a solid rounded block whose charged part is
+/// opaque and the rest translucent, with a small nub on the right. Proportions
+/// are measured from the system icon (body ≈ 2:1, corner ≈ ⅓ of the height,
+/// nub ⅓ tall). There is no SF Symbol for this look, so it is drawn here.
+struct BatteryShape: View {
+    let level: Int
+    let charging: Bool
+    let color: Color
+    var height: CGFloat = 11
+
+    var body: some View {
+        let w = height * 1.96
+        let radius = height * 0.32
+        let fraction = CGFloat(min(max(level, 0), 100)) / 100
+        HStack(spacing: height * 0.08) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(color.opacity(0.4))
+                Rectangle()
+                    .fill(color)
+                    .frame(width: w * fraction)
+                if charging {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: height * 0.78, weight: .bold))
+                        .frame(width: w, height: height)
+                        .blendMode(.destinationOut)
+                }
+            }
+            .frame(width: w, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .compositingGroup()
+            UnevenRoundedRectangle(cornerRadii: .init(bottomTrailing: height * 0.16, topTrailing: height * 0.16), style: .continuous)
+                .fill(color.opacity(0.4))
+                .frame(width: height * 0.13, height: height * 0.34)
+        }
+        .animation(Anim.micro, value: level)
+        .accessibilityElement()
+        .accessibilityLabel(charging ? "Battery \(level) percent, charging" : "Battery \(level) percent")
     }
 }
