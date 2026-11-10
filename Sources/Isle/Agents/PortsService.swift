@@ -20,6 +20,7 @@ final class PortsService {
     @ObservationIgnored private var running = false
 
     func beginUpdates() {
+        guard !Demo.isEnabled else { return }
         clients += 1
         guard clients == 1 else { return }
         refresh()

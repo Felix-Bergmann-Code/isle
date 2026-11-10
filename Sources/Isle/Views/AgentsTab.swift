@@ -171,7 +171,7 @@ private struct PortRow: View {
         HStack(spacing: 6) {
             Circle().fill(Color.green).frame(width: 6, height: 6)
             VStack(alignment: .leading, spacing: 0) {
-                Text(":\(port.port)")
+                Text(verbatim: ":\(port.port)") // verbatim: no locale grouping (":3.000")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white)
                 Text("\(port.command) · \(port.project)")

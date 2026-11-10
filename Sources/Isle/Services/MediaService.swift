@@ -282,6 +282,7 @@ final class MediaService: NSObject {
     }
 
     private func run(_ source: String, completion: ((NSAppleEventDescriptor?) -> Void)? = nil) {
+        guard !Demo.isEnabled else { return }
         scriptQueue.async {
             var error: NSDictionary?
             let result = NSAppleScript(source: source)?.executeAndReturnError(&error)

@@ -25,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windows = wm
         installStatusItem()
         // Services (and their permission prompts) after the island is on screen.
-        DispatchQueue.main.async { [env] in env.start() }
+        DispatchQueue.main.async { [env] in Demo.isEnabled ? Demo.populate(env) : env.start() }
     }
 
     private func installStatusItem() {

@@ -13,6 +13,10 @@ Now playing, meetings, AirPods, file shelf, and a live view of every AI coding a
 
 [Website](https://felix-bergmann-code.github.io/isle/) · [Contributing](CONTRIBUTING.md) · [Sister app: Gauge](https://github.com/Felix-Bergmann-Code/gauge)
 
+<br>
+
+<img src="docs/screenshots/agents.png" alt="Isle's Agents tab: three coding agents with their project, branch and status, plus running dev servers" width="100%">
+
 </div>
 
 ---
@@ -43,6 +47,13 @@ Requires **macOS 15+** and **Xcode 16+** (or a Swift 6 toolchain). The script si
 
 **Gestures:** hover to open, click the notch to open instantly, swipe left/right with two fingers to change tabs, drag files onto the notch to shelve them.
 
+<img src="docs/screenshots/home.png" alt="Home tab: now playing with album art and controls next to today's calendar" width="100%">
+<img src="docs/screenshots/shelf.png" alt="Shelf tab: files parked in the notch, with an AirDrop drop zone" width="100%">
+
+**Live activities and banners** while the island is closed:
+
+<img src="docs/screenshots/live-activities.png" alt="Compact music and agent activity, agent done and needs-you banners, a meeting reminder, AirPods connected and the volume HUD" width="100%">
+
 ### Agents tab
 
 Detects **Claude Code** (terminal and desktop sessions), **Codex**, **Gemini CLI**, **Cursor Agent**, **Aider**, **opencode**, **Copilot CLI**, **Amp** and **Goose**. For each one you get:
@@ -70,6 +81,15 @@ curl -s -X POST localhost:47823/hook/custom \
 
 ```bash
 scripts/isle open:agents   # open | open:home | open:shelf | toggle | close
+```
+
+### Demo mode
+
+`--demo` fills the island with made-up music, meetings, agents, dev servers and shelf files, and doesn't read anything from your Mac. Use it for screenshots and screen recordings (all screenshots here were made with it):
+
+```bash
+open build/Isle.app --args --demo
+scripts/isle demo:agent    # demo:agent | demo:waiting | demo:meeting | demo:airpods | demo:volume | demo:charging
 ```
 
 ## Performance

@@ -18,7 +18,7 @@ final class ShelfStore {
     @ObservationIgnored private let key = "shelfPaths"
 
     init() {
-        let paths = UserDefaults.standard.stringArray(forKey: key) ?? []
+        let paths = Demo.isEnabled ? [] : UserDefaults.standard.stringArray(forKey: key) ?? []
         items = paths.map { URL(fileURLWithPath: $0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
             .map { ShelfItem(url: $0) }
@@ -72,6 +72,7 @@ final class ShelfStore {
     }
 
     private func save() {
+        guard !Demo.isEnabled else { return }
         UserDefaults.standard.set(items.map(\.url.path), forKey: key)
     }
 

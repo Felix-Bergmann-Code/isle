@@ -83,6 +83,7 @@ private struct TabButton: View {
                 if selected {
                     Text(tab.title)
                         .font(.system(size: 12, weight: .semibold))
+                        .fixedSize() // otherwise it can stay truncated ("Ho…") after opening straight into a tab
                         .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
                 }
                 if let badge, !selected {

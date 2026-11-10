@@ -59,6 +59,7 @@ final class NotchWindowManager {
     private var monitors: [Any] = []
     private var openWork: DispatchWorkItem?
     private var closeWork: DispatchWorkItem?
+    private var pinnedOpen = false
     private var dragChangeCount = NSPasteboard(name: .drag).changeCount
     private var isDraggingFile = false
     private var scrollAccum: CGFloat = 0
@@ -114,9 +115,15 @@ final class NotchWindowManager {
                 "\($0.pid)\t\($0.kind.rawValue)\t\($0.phase.rawValue)\t\($0.source)\t\($0.project)\t\($0.title ?? "-")\t\($0.detail)"
             }
             try? lines.joined(separator: "\n").write(toFile: parts[1], atomically: true, encoding: .utf8)
-        case "close": env.vm.close(); panel?.ignoresMouseEvents = true
-        case "toggle" where env.vm.isOpen: env.vm.close(); panel?.ignoresMouseEvents = true
+        case "demo" where Demo.isEnabled && parts.count > 1:
+            pinnedOpen = false
+            env.vm.close()
+            Demo.perform(parts[1], env: env)
+        case "close": pinnedOpen = false; env.vm.close(); panel?.ignoresMouseEvents = true
+        case "toggle" where env.vm.isOpen: pinnedOpen = false; env.vm.close(); panel?.ignoresMouseEvents = true
         default:
+            // In demo mode a scripted open stays open (for screenshots) until a close command.
+            pinnedOpen = Demo.isEnabled
             panel?.ignoresMouseEvents = false
             env.vm.open(tab: tab)
         }
@@ -214,7 +221,7 @@ final class NotchWindowManager {
         } else {
             openWork?.cancel(); openWork = nil
             if vm.isHovering, !vm.isOpen { withAnimation(Anim.micro) { vm.isHovering = false } }
-            if vm.isOpen, closeWork == nil {
+            if vm.isOpen, closeWork == nil, !pinnedOpen {
                 let work = DispatchWorkItem { [weak self] in
                     guard let self else { return }
                     self.closeWork = nil
