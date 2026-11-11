@@ -4,7 +4,7 @@ import SwiftUI
 
 struct CompactView: View {
     let env: AppEnvironment
-    let kind: CompactKind
+    let content: CompactContent
     let side: CGFloat
     let height: CGFloat
 
@@ -19,26 +19,124 @@ struct CompactView: View {
     }
 
     @ViewBuilder private var leading: some View {
-        switch kind {
-        case .music, .musicAndAgents:
+        switch content.lead {
+        case .artwork:
             ArtworkView(image: env.media.artwork, size: height - 12, radius: 5)
                 .padding(.leading, 6)
         case .agents:
             AgentStack(sessions: env.agents.activeSessions, size: height - 12)
                 .padding(.leading, 6)
+        case .live(let id):
+            if let item = env.vm.liveItem(id), item.style != .dot {
+                LiveIcon(item: item, size: height - 12)
+                    .padding(.leading, 6)
+                    .transition(.blurFade)
+            }
         }
     }
 
     @ViewBuilder private var trailing: some View {
-        switch kind {
-        case .music:
+        switch content.trail {
+        case .audioBars:
             LayerAudioBars(playing: env.media.now?.isPlaying ?? false, color: env.media.accent)
                 .frame(width: 20, height: height * 0.46)
                 .padding(.trailing, 8)
-        case .agents, .musicAndAgents:
+        case .agentCount:
             AgentCountBadge(monitor: env.agents, size: height - 14)
                 .padding(.trailing, 8)
+        case .live(let id):
+            if let item = env.vm.liveItem(id) {
+                LiveAccessory(item: item, size: height - 16)
+                    .padding(.trailing, 9)
+                    .transition(.blurFade)
+            }
         }
+    }
+}
+
+/// A live item's glyph for the left side of the notch: just the symbol in its tint, like
+/// iOS live activities (a disc behind it read as a dim smudge at menu-bar size).
+struct LiveIcon: View {
+    let item: LiveItem
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: item.icon)
+            .font(.system(size: size * 0.78, weight: .semibold))
+            .foregroundStyle(item.tint)
+            .frame(width: size, height: size)
+            .contentTransition(.symbolEffect(.replace))
+    }
+}
+
+/// A live item's status for the right side of the notch: an optional ring plus short text.
+/// Countdowns tick once a second (the only thing that redraws while closed).
+struct LiveAccessory: View {
+    let item: LiveItem
+    let size: CGFloat
+
+    var body: some View {
+        if item.style == .dot {
+            LiveDot(tint: item.tint)
+        } else if let span = item.countdown {
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let left = max(0, span.end.timeIntervalSince(ctx.date))
+                content(progress: span.duration > 0 ? left / span.duration : 0, text: formatClock(left.rounded(.up)))
+            }
+        } else {
+            content(progress: item.progress, text: item.text)
+        }
+    }
+
+    private func content(progress: Double?, text: String?) -> some View {
+        HStack(spacing: 5) {
+            if let text, !text.isEmpty {
+                Text(text)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText(countsDown: item.countdown != nil))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            if let progress {
+                ProgressRing(progress: progress, tint: item.tint, lineWidth: 2.4)
+                    .frame(width: size, height: size)
+            } else if text == nil || text?.isEmpty == true {
+                LiveIcon(item: item, size: size + 2)
+            }
+        }
+    }
+}
+
+/// The `.dot` live style: a plain 7 pt dot, the way iOS shows the mic and camera in use.
+struct LiveDot: View {
+    /// Width of each side of the notch while a dot is all there is to show.
+    static let side: CGFloat = 24
+    let tint: Color
+
+    var body: some View {
+        Circle()
+            .fill(tint)
+            .frame(width: 7, height: 7)
+            .animation(Anim.micro, value: tint)
+    }
+}
+
+/// Thin progress ring used by live items (and anywhere a small meter is needed).
+struct ProgressRing: View {
+    let progress: Double
+    let tint: Color
+    var lineWidth: CGFloat = 2.4
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(tint.opacity(0.22), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: min(1, max(0.001, progress)))
+                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .animation(Anim.micro, value: progress)
     }
 }
 
@@ -78,6 +176,7 @@ struct AgentCountBadge: View {
         HStack(spacing: 5) {
             ZStack {
                 if attention {
+                    LayerPulseHalo(color: tint, since: monitor.longestWaitSince)
                     Circle().stroke(tint.opacity(0.22), lineWidth: 2)
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.55, weight: .heavy))
@@ -318,6 +417,17 @@ struct BannerView: View {
                 .foregroundStyle(.blue)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.blue.opacity(0.16)))
+        case .notice(let n):
+            if let image = n.image {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                    .frame(width: 34, height: 34)
+            } else {
+                Image(systemName: n.icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(n.tint)
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(n.tint.opacity(0.16)))
+            }
         default:
             EmptyView()
         }
@@ -335,6 +445,12 @@ struct BannerView: View {
             Text("in \(m)m")
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(.red)
+        case .notice(let n):
+            if let t = n.trailing {
+                Text(t)
+                    .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(n.tint)
+            }
         default:
             EmptyView()
         }
@@ -345,6 +461,7 @@ struct BannerView: View {
         case .agent(let b): return b.title
         case .meeting(let t, _): return t
         case .shelf(let n): return n == 1 ? "1 file on your shelf" : "\(n) files on your shelf"
+        case .notice(let n): return n.title
         default: return ""
         }
     }
@@ -354,6 +471,7 @@ struct BannerView: View {
         case .agent(let b): return b.subtitle
         case .meeting: return "Hover to join"
         case .shelf: return "Drag them out whenever you need them"
+        case .notice(let n): return n.subtitle
         default: return ""
         }
     }

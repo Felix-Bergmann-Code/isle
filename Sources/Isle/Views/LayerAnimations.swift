@@ -341,3 +341,89 @@ final class MotionHost<Content: View>: NSView {
         l.add(a, forKey: "motion")
     }
 }
+
+// MARK: - Pulse halo
+
+/// A soft ring that swells out of a badge and fades, every 2.4 s. It starts `delay` after
+/// `since`: the start is scheduled in the render server, so waiting for it costs nothing.
+struct LayerPulseHalo: NSViewRepresentable {
+    let color: Color
+    /// Nil removes the pulse.
+    let since: Date?
+    var delay: TimeInterval = 180
+
+    func makeNSView(context: Context) -> PulseHaloView { PulseHaloView() }
+
+    func updateNSView(_ v: PulseHaloView, context: Context) {
+        v.setColor(NSColor(color))
+        v.schedule(since.map { $0.addingTimeInterval(delay) })
+    }
+}
+
+final class PulseHaloView: NSView {
+    private let ring = CAShapeLayer()
+    private var start: Date?
+    private var laidOutSize: CGSize = .zero
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        ring.fillColor = nil
+        ring.lineWidth = 1.5
+        ring.opacity = 0            // shows only while the pulse runs
+        layer?.addSublayer(ring)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        guard bounds.size != laidOutSize, bounds.width > 0 else { return }
+        laidOutSize = bounds.size
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ring.frame = bounds
+        ring.path = CGPath(ellipseIn: bounds, transform: nil)
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { install() }
+    }
+
+    func setColor(_ c: NSColor) {
+        if ring.strokeColor != c.cgColor { ring.strokeColor = c.cgColor }
+    }
+
+    func schedule(_ start: Date?) {
+        guard start != self.start else { return }
+        self.start = start
+        install()
+    }
+
+    private func install() {
+        ring.removeAnimation(forKey: "pulse")
+        guard let start, window != nil else { return }
+        let ease = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .linear)]
+        let scale = CAKeyframeAnimation(keyPath: "transform.scale")
+        scale.values = [1, 1.35, 1.35]
+        scale.keyTimes = [0, 0.7, 1]
+        scale.timingFunctions = ease
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.75, 0, 0]
+        fade.keyTimes = [0, 0.7, 1]
+        fade.timingFunctions = ease
+        let g = CAAnimationGroup()
+        g.animations = [scale, fade]
+        g.duration = 2.4
+        g.repeatCount = .infinity
+        g.isRemovedOnCompletion = false
+        // A future beginTime: until then the model opacity (0) shows, i.e. nothing.
+        g.beginTime = CACurrentMediaTime() + max(0, start.timeIntervalSinceNow)
+        ring.add(g, forKey: "pulse")
+    }
+}

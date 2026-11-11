@@ -7,6 +7,7 @@ import Network
 ///                        decides in the island, then answered with the hook's decision JSON
 ///                        (an empty body leaves the decision to Claude Code's own prompt)
 ///   POST /hook/custom  – {"id","name","phase":"working|waiting|done|idle|end","detail","cwd"}
+///   POST /hook/command – a long terminal command finished (zsh hook): {cmd, exit, duration, cwd, term, pid}
 ///   GET  /health
 final class HookServer {
     static let defaultPort: UInt16 = 47823
@@ -16,6 +17,8 @@ final class HookServer {
     var onPermission: ((_ id: UUID, _ pid: pid_t?, _ payload: [String: Any]) -> Bool)?
     /// A held permission request ended without a decision from the island (main thread).
     var onPermissionGone: ((_ id: UUID) -> Void)?
+    /// A terminal command finished (main thread).
+    var onCommand: ((_ payload: [String: Any]) -> Void)?
     /// How long the island holds a request before handing it back to Claude Code's prompt.
     static let permissionHold: TimeInterval = 120
 
@@ -151,6 +154,7 @@ final class HookServer {
         guard r.method == "POST", r.path.hasPrefix("/hook/") else { return }
         let source = String(r.path.dropFirst("/hook/".count))
         let payload = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
+        if source == "command" { DispatchQueue.main.async { self.onCommand?(payload) }; return }
         let pid = r.headers["x-isle-pid"].flatMap { Int32($0) }
         DispatchQueue.main.async { self.onEvent?(source, pid, payload) }
     }
@@ -169,7 +173,7 @@ enum ClaudeHookInstaller {
     static var permissionCommand: String {
         "curl -s -m \(Int(HookServer.permissionHold) + 10) -X POST -H \"X-Isle-PID: $PPID\" -H 'Content-Type: application/json' --data-binary @- http://\(permissionMarker) 2>/dev/null || true"
     }
-    static let events = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SubagentStop", "SessionStart", "SessionEnd", "PermissionRequest"]
+    static let events = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "SubagentStart", "SubagentStop", "SessionStart", "SessionEnd", "PermissionRequest"]
     static var settingsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json") }
 
     static var isInstalled: Bool {
@@ -177,10 +181,13 @@ enum ClaudeHookInstaller {
         return s.contains(marker)
     }
 
-    /// Installed by an older Isle without the approval hook.
+    /// Installed by an older Isle that lacks some hook (approvals, subagent tracking).
     static var needsUpgrade: Bool {
-        guard let s = try? String(contentsOf: settingsURL, encoding: .utf8) else { return false }
-        return s.contains(marker) && !s.contains(permissionMarker)
+        guard isInstalled, let root = try? readSettings() else { return false }
+        let hooks = root["hooks"] as? [String: Any] ?? [:]
+        return events.contains { event in
+            !((hooks[event] as? [[String: Any]]) ?? []).contains(where: containsMarker)
+        }
     }
 
     enum InstallError: LocalizedError {

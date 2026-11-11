@@ -5,8 +5,15 @@ struct HomeTab: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
-            NowPlayingView(env: env)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            // The camera mirror stands in for the player while it's open (MirrorView.swift).
+            ZStack(alignment: .leading) {
+                if env.mirror.isShown {
+                    MirrorView(env: env).transition(.blurFade)
+                } else {
+                    NowPlayingView(env: env).transition(.blurFade)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1)
             CalendarWidget(env: env)
                 .frame(width: 214)
@@ -193,9 +200,12 @@ struct CalendarWidget: View {
                 } else {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 6) {
-                            ForEach(cal.events.prefix(8)) { ev in EventRow(event: ev) }
+                            ForEach(cal.events.prefix(8)) { ev in EventRow(event: ev, mirror: env.settings.cameraMirror ? env.mirror : nil) }
                         }
                     }
+                    // Fade the last row out instead of cutting it off above the clocks / island edge.
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.82),
+                                                 .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
                 }
             case .unknown, .denied:
                 VStack(alignment: .leading, spacing: 6) {
@@ -206,6 +216,7 @@ struct CalendarWidget: View {
                 }
             }
             Spacer(minLength: 0)
+            WorldClocksRow(env: env)
         }
     }
 }
@@ -236,6 +247,8 @@ private struct WeekStrip: View {
 
 private struct EventRow: View {
     let event: CalEvent
+    /// Set while the camera mirror is on: offers a quick look before a call that's about to start.
+    var mirror: MirrorService? = nil
     @State private var hovering = false
 
     var body: some View {
@@ -251,6 +264,9 @@ private struct EventRow: View {
                     .foregroundStyle(event.isOngoing ? event.color : Color.islandSecondary)
             }
             Spacer(minLength: 4)
+            if let mirror, event.meetingURL != nil, !event.isAllDay, event.start.timeIntervalSinceNow <= 15 * 60 {
+                MirrorButton { mirror.show() }
+            }
             if let url = event.meetingURL {
                 Button { NSWorkspace.shared.open(url) } label: {
                     Image(systemName: "video.fill")

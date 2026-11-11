@@ -42,8 +42,8 @@ struct IslandContentView: View {
             switch layout.mode {
             case .closed:
                 Color.clear
-            case .compact(let kind):
-                CompactView(env: env, kind: kind, side: layout.sideWidth, height: g.notchHeight)
+            case .compact(let content):
+                CompactView(env: env, content: content, side: layout.sideWidth, height: g.notchHeight)
                     .transition(.blurFade)
             case .sides:
                 SidesActivityView(env: env, side: layout.sideWidth, height: g.notchHeight)

@@ -13,6 +13,10 @@ struct DevPort: Identifiable, Equatable {
 @Observable
 final class PortsService {
     var ports: [DevPort] = []
+    /// Main thread, whenever a scan changes the list: (previous, current).
+    @ObservationIgnored var onChange: ((_ old: [DevPort], _ new: [DevPort]) -> Void)?
+    /// Isle's stop button ended this server, so its exit is expected (not a crash).
+    @ObservationIgnored var onStop: ((DevPort) -> Void)?
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var clients = 0
@@ -40,7 +44,11 @@ final class PortsService {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.running = false
-                if found != self.ports { self.ports = found }
+                if found != self.ports {
+                    let old = self.ports
+                    self.ports = found
+                    self.onChange?(old, found)
+                }
             }
         }
     }
@@ -50,6 +58,7 @@ final class PortsService {
     }
 
     func stop(_ p: DevPort) {
+        onStop?(p)
         kill(p.pid, SIGTERM)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.refresh() }
     }

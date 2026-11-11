@@ -116,6 +116,7 @@ private struct HeaderTrailing: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            HeaderAccessories(env: env)
             if case .volume(let level, let muted) = env.vm.activity {
                 HStack(spacing: 6) {
                     Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -130,8 +131,14 @@ private struct HeaderTrailing: View {
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             } else if env.battery.hasBattery {
-                BatteryGlyph(level: env.battery.level, charging: env.battery.isPluggedIn, showPercent: true)
-                    .transition(.opacity)
+                // Each header half is only ~200 pt beside a hardware notch: when accessories need
+                // the room, the battery drops its percentage (still in the tooltip).
+                ViewThatFits(in: .horizontal) {
+                    BatteryGlyph(level: env.battery.level, charging: env.battery.isPluggedIn, showPercent: true)
+                    BatteryGlyph(level: env.battery.level, charging: env.battery.isPluggedIn, showPercent: false)
+                }
+                .help("Battery \(env.battery.level)%")
+                .transition(.opacity)
             }
             IslandIconButton(systemName: "gearshape.fill", size: 12, padding: 6) { env.openSettings() }
         }

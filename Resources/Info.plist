@@ -7,15 +7,17 @@
     <key>CFBundleIdentifier</key><string>io.github.felix-bergmann-code.isle</string>
     <key>CFBundleExecutable</key><string>Isle</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>1.1</string>
+    <key>CFBundleVersion</key><string>2</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSAppleEventsUsageDescription</key><string>Isle shows what's playing in Spotify and Music and lets you control playback from the notch.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Isle shows what's playing in Spotify and Music and lets you control playback from the notch. It also types your replies to coding agents into iTerm2 and Terminal.</string>
     <key>NSCalendarsFullAccessUsageDescription</key><string>Isle shows your upcoming meetings in the notch.</string>
     <key>NSCalendarsUsageDescription</key><string>Isle shows your upcoming meetings in the notch.</string>
+    <key>NSDownloadsFolderUsageDescription</key><string>Isle shows download progress in the notch and puts finished files on the Shelf.</string>
     <key>NSBluetoothAlwaysUsageDescription</key><string>Isle shows a live activity when your AirPods or other Bluetooth devices connect.</string>
+    <key>NSCameraUsageDescription</key><string>Isle shows a mirror so you can check how you look before a call.</string>
 </dict>
 </plist>

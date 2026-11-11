@@ -1,3 +1,9 @@
 #!/bin/zsh
-# Control Isle from the shell:  isle open | isle open:agents | isle toggle | isle close
-osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('io.github.felix-bergmann-code.isle.command', '${1:-toggle}', \$(), true)" >/dev/null
+# Control Isle from the shell:
+#   isle open | open:home | open:agents | open:shelf | toggle | close
+#   isle timer:25 (minutes) | timer:stop
+#   isle quiet (toggle) | quiet:on | quiet:off
+#   isle mirror | note
+#   isle settings | settings:permissions (or any page: general, agents, integrations, home, shelf…)
+# ISLE_INSTANCE=dev isle … talks to a dev build started with that variable.
+osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('io.github.felix-bergmann-code.isle.command${ISLE_INSTANCE:+.$ISLE_INSTANCE}', '${1:-toggle}', \$(), true)" >/dev/null

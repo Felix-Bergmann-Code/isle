@@ -14,9 +14,11 @@ let package = Package(
                 .linkedFramework("EventKit"),
                 .linkedFramework("CoreAudio"),
                 .linkedFramework("AudioToolbox"),
+                .linkedFramework("CoreMediaIO"),
                 .linkedFramework("IOKit"),
                 .linkedFramework("QuickLookThumbnailing"),
                 .linkedFramework("ServiceManagement"),
+                .linkedFramework("AVFoundation"),
             ]
         ),
     ]

@@ -53,14 +53,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView(env: env))
+            let host = NSHostingController(rootView: SettingsView(env: env, nav: env.settingsNav))
+            // SwiftUI fills the toolbar (page title, back and forward) as in System Settings.
+            host.sceneBridgingOptions = [.toolbars, .title]
             let w = NSWindow(contentViewController: host)
-            w.title = "Isle Settings"
-            w.styleMask = [.titled, .closable, .miniaturizable]
+            w.identifier = SettingsView.windowID
+            w.title = env.settingsNav.page.title
+            w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
+            w.setContentSize(NSSize(width: 840, height: 640))
             w.center()
+            w.setFrameAutosaveName("IsleSettings")
             settingsWindow = w
         }
+        PermissionCenter.shared.refresh(env: env)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
     }

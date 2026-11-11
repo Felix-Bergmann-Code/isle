@@ -4,18 +4,24 @@ import UniformTypeIdentifiers
 struct ShelfTab: View {
     let env: AppEnvironment
     @State private var airdropTargeted = false
+    @AppStorage("shelfMode") private var mode: ShelfMode = .files
 
     var body: some View {
         let shelf = env.shelf
+        let modes = ShelfMode.available(env.settings)
+        let current = mode.resolved(in: modes)
         HStack(spacing: 14) {
             ZStack {
-                if shelf.items.isEmpty {
+                if current != .files {
+                    ShelfModePane(env: env, mode: current)
+                } else if shelf.items.isEmpty {
                     DropZone(icon: "tray.and.arrow.down.fill", title: "Drop files here",
                              subtitle: "They'll wait on the shelf until you drag them out",
                              targeted: env.vm.dropTargeted)
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
+                            ShelfModeSwitch(modes: modes, selection: $mode).hidden()
                             Text("\(shelf.items.count) item\(shelf.items.count == 1 ? "" : "s")")
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.islandSecondary)
                             Spacer()
@@ -42,6 +48,11 @@ struct ShelfTab: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(Anim.island, value: shelf.items)
+            .overlay(alignment: .topLeading) { ShelfModeSwitch(modes: modes, selection: $mode).padding(10) }
+            .onChange(of: env.vm.dropTargeted, initial: true) { _, targeted in
+                // Files dragged onto the island land in the files shelf, so show it.
+                if targeted, mode != .files { withAnimation(Anim.tab) { mode = .files } }
+            }
 
             DropZone(icon: "airplayaudio", title: "AirDrop", subtitle: "Drop to send", targeted: airdropTargeted, tint: .blue)
                 .frame(width: 118)

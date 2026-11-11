@@ -80,6 +80,8 @@ final class AgentMonitor {
         guard AppSettings.shared.agentApprovals, !Self.appOnlyTools.contains(tool), !tool.hasPrefix("mcp__ccd_") else { return false }
         let prompt = PermissionPrompt(
             id: id, agentPID: pid, sessionID: payload["session_id"] as? String,
+            agentID: (payload["agent_id"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            agentType: (payload["agent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             cwd: payload["cwd"] as? String ?? "", tool: tool,
             summary: PermissionPrompt.summarize(tool: tool, input: payload["tool_input"] as? [String: Any] ?? [:]),
             created: Date())
@@ -94,6 +96,8 @@ final class AgentMonitor {
         onPermissionDecision?(p.id, decision)
         var payload: [String: Any] = ["cwd": p.cwd, "tool_name": p.tool]
         if let sid = p.sessionID { payload["session_id"] = sid }
+        if let aid = p.agentID { payload["agent_id"] = aid }
+        if let type = p.agentType { payload["agent_type"] = type }
         switch decision {
         case .allow: payload["hook_event_name"] = "PreToolUse"
         case .deny: payload["hook_event_name"] = "PostToolUse"
@@ -176,7 +180,14 @@ final class AgentScanner {
         var detail: String
         var date: Date
         var message: String?
+        /// The subagent whose permission request put the session in `.waiting`.
+        var fromAgent: String? = nil
+        /// After this the state is too old to trust; the transcript decides.
+        var expires: Date? = nil
     }
+
+    /// An Agent tool call the main thread just made, waiting for its SubagentStart.
+    private struct Spawn { let type: String; let description: String; let date: Date }
 
     private struct CustomAgent {
         var name: String
@@ -196,6 +207,7 @@ final class AgentScanner {
         var title: String?
         /// The turn ended by asking the person something (a next-step question or a closing "?").
         var question: String?
+        var context: ContextFill? = nil
     }
 
     private var classified: [pid_t: Classified] = [:]
@@ -204,6 +216,9 @@ final class AgentScanner {
     private var hookByCwd: [String: HookState] = [:]
     private var hookTranscript: [pid_t: URL] = [:]
     private var custom: [String: CustomAgent] = [:]
+    /// Owner key ("p<root pid>" or "c<cwd>") → agent id → subagent.
+    private var subagents: [String: [String: Subagent]] = [:]
+    private var spawns: [String: [Spawn]] = [:]
     private var branchCache: [String: (branch: String?, at: Date)] = [:]
     private var tailCache: [URL: TranscriptTail] = [:]
     private var knownTitles: [URL: String] = [:]
@@ -250,6 +265,7 @@ final class AgentScanner {
         transcriptFor = transcriptFor.filter { infos[$0.key] != nil }
         hookByPID = hookByPID.filter { infos[$0.key] != nil }
         hookTranscript = hookTranscript.filter { infos[$0.key] != nil }
+        pruneSubagents(now: now, alive: { infos[$0] != nil })
 
         var children: [pid_t: [pid_t]] = [:]
         for (pid, b) in infos { children[b.ppid, default: []].append(pid) }
@@ -368,6 +384,7 @@ final class AgentScanner {
 
             var tailDate = Date.distantPast
             var title: String?
+            var context: ContextFill?
             var asking = false
             let hook = kind == .claude ? (hookByPID[pid] ?? hookByCwd[t.cwd]) : nil
             if kind == .claude, assigned[pid] == nil, hook == nil {
@@ -382,6 +399,7 @@ final class AgentScanner {
                let tail = tail(of: url) {
                 tailDate = tail.mtime
                 title = tail.title
+                context = tail.context
                 let sub = subActivity(for: url)
                 (phase, detail, message) = interpret(tail, recentCPU: recentCPU, subagentActive: sub.map { now.timeIntervalSince($0) < 8 } ?? false, now: now)
                 asking = phase == .waiting && tail.question != nil
@@ -390,7 +408,8 @@ final class AgentScanner {
             }
 
             // The turn ended on a question: Stop/idle hooks mean "your turn", not "finished".
-            if let h = hook, h.date >= tailDate.addingTimeInterval(-1.5), !(asking && (h.phase == .done || h.phase == .idle)) {
+            if let h = hook, h.expires.map({ now < $0 }) ?? true,
+               h.date >= tailDate.addingTimeInterval(-1.5), !(asking && (h.phase == .done || h.phase == .idle)) {
                 phase = h.phase
                 detail = h.detail
                 if let m = h.message { message = m }
@@ -399,6 +418,21 @@ final class AgentScanner {
                     phase = .working; detail = "Running a tool"
                 }
                 if phase == .done, now.timeIntervalSince(h.date) > 120 { phase = .idle; detail = "Ready" }
+            }
+
+            // Subagents still running keep the session working: its turn may have ended, but the
+            // work hasn't, and the main thread picks their results up in another turn.
+            let subs = kind == .claude
+                ? (subagents["p\(pid)"] ?? subagents["c\(t.cwd)"]).map { $0.values.sorted { $0.started < $1.started } } ?? []
+                : []
+            let running = subs.filter(\.isRunning).count
+            if running > 0 {
+                let summary = running == 1 ? "1 subagent working" : "\(running) subagents working"
+                if phase == .done || phase == .idle {
+                    phase = .working; detail = summary
+                } else if phase == .working, ["Thinking…", "Running subagents", "Working…"].contains(detail) {
+                    detail = summary
+                }
             }
 
             if phase != t.phase {
@@ -426,7 +460,9 @@ final class AgentScanner {
                 isBackground: background,
                 source: source,
                 title: title,
-                sessionID: (assigned[pid] ?? hookTranscript[pid])?.deletingPathExtension().lastPathComponent
+                sessionID: (assigned[pid] ?? hookTranscript[pid])?.deletingPathExtension().lastPathComponent,
+                context: context,
+                subagents: subs
             ))
         }
 
@@ -464,12 +500,25 @@ final class AgentScanner {
 
         let event = payload["hook_event_name"] as? String ?? ""
         let cwd = payload["cwd"] as? String
+        let root = pid.flatMap(agentRoot)
+        // Events from inside a subagent carry its agent_id; they describe the subagent, not the session.
+        if let agentID = payload["agent_id"] as? String, !agentID.isEmpty {
+            ingestSubagent(agentID, event: event, payload: payload, root: root, cwd: cwd, now: now)
+            return
+        }
         var state: HookState
         switch event {
         case "UserPromptSubmit":
             state = HookState(phase: .working, detail: "Thinking…", date: now)
         case "PreToolUse":
             let tool = payload["tool_name"] as? String ?? "tool"
+            if tool == "Agent" || tool == "Task", let key = ownerKey(root: root, cwd: cwd) {
+                let input = payload["tool_input"] as? [String: Any] ?? [:]
+                let type = (input["subagent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "general-purpose"
+                if let d = input["description"] as? String, !d.isEmpty {
+                    spawns[key, default: []].append(Spawn(type: type, description: d, date: now))
+                }
+            }
             if tool == "AskUserQuestion" {
                 state = HookState(phase: .waiting, detail: "Has a question for you", date: now)
             } else if tool == "ExitPlanMode" {
@@ -492,17 +541,22 @@ final class AgentScanner {
             state = HookState(phase: .waiting, detail: "Wants to use \(Self.toolShort(tool))", date: now)
         case "Stop":
             state = HookState(phase: .done, detail: "Finished", date: now)
+            if let tasks = payload["background_tasks"] as? [[String: Any]], let key = ownerKey(root: root, cwd: cwd) {
+                reconcileSubagents(key: key, backgroundTasks: tasks, now: now)
+            }
         case "SessionStart":
             state = HookState(phase: .idle, detail: "Ready", date: now)
         case "SessionEnd":
             if let pid { hookByPID[pid] = nil }
+            if let root { hookByPID[root] = nil }
             if let cwd { hookByCwd[cwd] = nil }
+            if let key = ownerKey(root: root, cwd: cwd) { subagents[key] = nil; spawns[key] = nil }
             return
         default:
             return
         }
 
-        if let pid, let root = agentRoot(from: pid) {
+        if let root {
             hookByPID[root] = state
             if let tp = payload["transcript_path"] as? String, !tp.isEmpty {
                 hookTranscript[root] = URL(fileURLWithPath: (tp as NSString).expandingTildeInPath)
@@ -521,6 +575,108 @@ final class AgentScanner {
             p = b.ppid
         }
         return nil
+    }
+
+    // MARK: Subagents
+
+    private func ownerKey(root: pid_t?, cwd: String?) -> String? {
+        if let root { return "p\(root)" }
+        if let cwd, !cwd.isEmpty { return "c\(cwd)" }
+        return nil
+    }
+
+    private func sessionHook(root: pid_t?, cwd: String?) -> HookState? {
+        if let root { return hookByPID[root] }
+        return cwd.flatMap { hookByCwd[$0] }
+    }
+
+    private func setSessionHook(_ s: HookState, root: pid_t?, cwd: String?) {
+        if let root { hookByPID[root] = s } else if let cwd { hookByCwd[cwd] = s }
+    }
+
+    private func ingestSubagent(_ id: String, event: String, payload: [String: Any], root: pid_t?, cwd: String?, now: Date) {
+        guard let key = ownerKey(root: root, cwd: cwd) else { return }
+        let type = (payload["agent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        var subs = subagents[key] ?? [:]
+        // Claude Code's own helpers (e.g. session titling) end with a SubagentStop that nothing announced.
+        if subs[id] == nil, event == "SubagentStop" || event == "Stop" || event == "SessionEnd" { return }
+        var a = subs[id] ?? Subagent(id: id, type: type ?? "agent", label: nil, detail: "Starting…", started: now, lastEvent: now)
+        if let type { a.type = type }
+        if a.label == nil, var queue = spawns[key], !queue.isEmpty {
+            let i = queue.firstIndex { $0.type == a.type } ?? 0
+            a.label = queue.remove(at: i).description
+            spawns[key] = queue
+        }
+        a.lastEvent = now
+        let tool = payload["tool_name"] as? String ?? "tool"
+        switch event {
+        case "SubagentStart": a.detail = "Starting…"
+        case "PreToolUse": a.detail = Self.toolPhrase(tool)
+        case "PostToolUse", "PostToolUseFailure": a.detail = "Thinking…"
+        case "PermissionRequest": a.detail = "Wants to use \(Self.toolShort(tool))"
+        case "SubagentStop", "Stop":
+            guard a.isRunning else { return }
+            a.finishedAt = now
+            a.detail = "Done"
+        case "SessionEnd": a.finishedAt = a.finishedAt ?? now
+        default: break
+        }
+        subs[id] = a
+        subagents[key] = subs
+
+        let parent = sessionHook(root: root, cwd: cwd)
+        if event == "PermissionRequest" {
+            // A subagent's approval holds up the whole session.
+            setSessionHook(HookState(phase: .waiting, detail: "\(a.type) wants to use \(Self.toolShort(tool))",
+                                     date: now, fromAgent: id), root: root, cwd: cwd)
+        } else if let p = parent, p.phase == .waiting, p.fromAgent == id {
+            setSessionHook(HookState(phase: .working, detail: "Thinking…", date: now), root: root, cwd: cwd)
+        } else if !a.isRunning, !subs.values.contains(where: \.isRunning), let p = parent, p.phase == .done || p.phase == .idle {
+            // The last background subagent finished after the turn ended. The main thread wakes to take
+            // its result; stay "working" until that turn's Stop instead of flashing "done" in between.
+            setSessionHook(HookState(phase: .working, detail: "Wrapping up…", date: now, expires: now.addingTimeInterval(90)),
+                           root: root, cwd: cwd)
+        }
+    }
+
+    /// The main thread's turn ended. Only the tasks Claude Code still lists as running survive it;
+    /// anything else we think is running missed its SubagentStop.
+    private func reconcileSubagents(key: String, backgroundTasks: [[String: Any]], now: Date) {
+        let ended: Set<String> = ["completed", "failed", "killed", "cancelled", "canceled", "aborted", "stopped", "error", "done"]
+        let live = backgroundTasks.filter { t in
+            let type = (t["type"] as? String ?? "").lowercased()
+            return type.contains("agent") && !ended.contains((t["status"] as? String ?? "").lowercased())
+        }
+        var subs = subagents[key] ?? [:]
+        let liveIDs = Set(live.compactMap { $0["id"] as? String })
+        for (id, a) in subs where a.isRunning && !liveIDs.contains(id) {
+            subs[id] = nil
+        }
+        for t in live {
+            guard let id = t["id"] as? String else { continue }
+            var a = subs[id] ?? Subagent(id: id, type: (t["agent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "agent",
+                                         label: nil, detail: "Working in the background", started: now, lastEvent: now)
+            if a.label == nil, let d = t["description"] as? String, !d.isEmpty { a.label = d }
+            a.isBackground = true
+            subs[id] = a
+        }
+        subagents[key] = subs.isEmpty ? nil : subs
+    }
+
+    private func pruneSubagents(now: Date, alive: (pid_t) -> Bool) {
+        for (key, subs) in subagents {
+            if key.hasPrefix("p"), let pid = pid_t(key.dropFirst()), !alive(pid) { subagents[key] = nil; spawns[key] = nil; continue }
+            // Finished ones linger briefly so the row can show them done; silent ones missed their stop.
+            let kept = subs.filter { _, a in
+                if let f = a.finishedAt { return now.timeIntervalSince(f) < 6 }
+                return now.timeIntervalSince(a.lastEvent) < 30 * 60
+            }
+            subagents[key] = kept.isEmpty ? nil : kept
+        }
+        for (key, list) in spawns {
+            let kept = list.filter { now.timeIntervalSince($0.date) < 60 }
+            spawns[key] = kept.isEmpty ? nil : kept
+        }
     }
 
     // MARK: Classification
@@ -565,7 +721,9 @@ final class AgentScanner {
             if let app = NSRunningApplication(processIdentifier: p), app.activationPolicy == .regular {
                 return (app.localizedName, p)
             }
-            p = infos[p]?.ppid ?? 0
+            // `infos` only holds the person's own processes; Terminal.app's shells sit under a
+            // root-owned `login`, so look those up directly or the walk stops short of Terminal.
+            p = infos[p]?.ppid ?? ProcInfo.parent(p) ?? 0
         }
         return (nil, nil)
     }
@@ -693,6 +851,7 @@ final class AgentScanner {
             if offset > 0, !lines.isEmpty { lines.removeFirst() }
             if var t = parseTail(lines: lines, mtime: mtime) {
                 if t.title == nil { t.title = tailCache[url]?.title ?? knownTitles[url] }
+                if AppSettings.shared.showUsageMeter { t.context = ContextFill.parse(lines) ?? tailCache[url]?.context }
                 if let title = t.title { knownTitles[url] = title }
                 tailCache[url] = t
                 if tailCache.count > 64 { tailCache.removeAll() }
@@ -792,11 +951,13 @@ final class AgentScanner {
         return nil
     }
 
-    /// A closing line that ends in "?" ("Want me to push it?").
+    /// A closing line that ends in "?" ("Want me to push it?"), also when a short choice hint
+    /// follows it ("Should I create it? (yes/no)", "Continue? [y/N]").
     private static func closingQuestion(_ text: String) -> String? {
         let last = text.split(whereSeparator: \.isNewline).last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         let plain = last.trimmingCharacters(in: CharacterSet(charactersIn: "*_`> "))
-        return plain.hasSuffix("?") ? plain : nil
+        if plain.hasSuffix("?") { return plain }
+        return plain.range(of: #"\?\s*[\(\[][^\)\]]{1,16}[\)\]]$"#, options: .regularExpression) != nil ? plain : nil
     }
 
     private func interpret(_ t: TranscriptTail, recentCPU: Bool, subagentActive: Bool, now: Date) -> (AgentPhase, String, String?) {

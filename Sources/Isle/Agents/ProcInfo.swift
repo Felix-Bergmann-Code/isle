@@ -41,6 +41,15 @@ enum ProcInfo {
         }
     }
 
+    /// Parent of any process, including root-owned ones (`login`) that `proc_pidinfo` refuses.
+    static func parent(_ pid: pid_t) -> pid_t? {
+        var kp = kinfo_proc()
+        var len = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &kp, &len, nil, 0) == 0, len > 0 else { return nil }
+        return kp.kp_eproc.e_ppid
+    }
+
     static func bsd(_ pid: pid_t) -> BSD? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)

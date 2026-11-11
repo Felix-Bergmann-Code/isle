@@ -95,6 +95,30 @@ struct AgentSession: Identifiable, Equatable {
     var title: String?
     /// Claude Code session id (the transcript's file name), used to deep-link into the chat.
     var sessionID: String? = nil
+    /// How full a Claude session's context window is (last assistant usage), when known.
+    var context: ContextFill? = nil
+
+    /// Subagents this session spawned that are running or just finished, oldest first.
+    var subagents: [Subagent] = []
+
+    var runningSubagents: Int { subagents.filter(\.isRunning).count }
+}
+
+/// A subagent (Agent tool worker) inside a Claude Code session, tracked from hooks that carry `agent_id`.
+struct Subagent: Identifiable, Equatable {
+    let id: String
+    /// Agent type, e.g. "Explore" or "general-purpose".
+    var type: String
+    /// The task description the parent gave it, when known.
+    var label: String?
+    var detail: String
+    var started: Date
+    var lastEvent: Date
+    var finishedAt: Date?
+    /// Still running after the parent's turn ended.
+    var isBackground = false
+
+    var isRunning: Bool { finishedAt == nil }
 }
 
 /// A tool call waiting for approval, held open by Isle's PermissionRequest hook.
@@ -102,6 +126,9 @@ struct PermissionPrompt: Identifiable, Equatable {
     let id: UUID
     let agentPID: pid_t?
     let sessionID: String?
+    /// Set when a subagent, not the main thread, wants the tool.
+    var agentID: String? = nil
+    var agentType: String? = nil
     let cwd: String
     let tool: String
     /// What the tool is about to do, e.g. the shell command or the file it edits.
