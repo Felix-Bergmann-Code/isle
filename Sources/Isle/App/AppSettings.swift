@@ -45,7 +45,7 @@ final class AppSettings {
     init() {
         d.register(defaults: [
             "screenMode": ScreenMode.automatic.rawValue,
-            "hoverDelay": 0.08,
+            "hoverDelay": 0.045,
             "haptics": true,
             "showPillOnNonNotch": true,
             "showMusicActivity": true,
